@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мой сайт погоды</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 30px;
+            padding: 30px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            transition: transform 0.3s;
+        }
+        
+        .container:hover {
+            transform: scale(1.02);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 2em;
+        }
+        
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+        
+        input {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 15px;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus {
+            border-color: #667eea;
+        }
+        
+        button {
+            padding: 15px 25px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 15px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        button:hover {
+            transform: scale(1.05);
+        }
+        
+        .weather-card {
+            background: #f8f9fa;
+            border-radius: 20px;
+            padding: 20px;
+            text-align: center;
+            display: none;
+        }
+        
+        .weather-card.show {
+            display: block;
+            animation: fadeIn 0.5s;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .city-name {
+            font-size: 28px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .temperature {
+            font-size: 64px;
+            font-weight: bold;
+            color: #667eea;
+            margin: 20px 0;
+        }
+        
+        .weather-icon {
+            font-size: 64px;
+            margin: 10px 0;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .info-item {
+            background: white;
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .info-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .info-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 15px;
+            text-align: center;
+            display: none;
+        }
+        
+        .error.show {
+            display: block;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            display: none;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 12px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌤 Погода в любом городе</h1>
+        
+        <div class="search-box">
+            <input type="text" id="cityInput" placeholder="Введите город... Например: Moscow">
+            <button onclick="getWeather()">🔍 Узнать</button>
+        </div>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Загрузка...</p>
+        </div>
+        
+        <div class="error" id="error">
+            ❌ Город не найден! Проверьте название
+        </div>
+        
+        <div class="weather-card" id="weatherCard">
+            <div class="city-name" id="cityName"></div>
+            <div class="weather-icon" id="weatherIcon"></div>
+            <div class="temperature" id="temperature"></div>
+            <div id="description" style="color: #666; margin: 10px 0;"></div>
+            
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">🤔 Ощущается как</div>
+                    <div class="info-value" id="feelsLike"></div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">💧 Влажность</div>
+                    <div class="info-value" id="humidity"></div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">💨 Ветер</div>
+                    <div class="info-value" id="wind"></div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">🕐 Обновлено</div>
+                    <div class="info-value" id="updateTime"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            Данные предоставлены OpenWeatherMap
+        </div>
+    </div>
+
+    <script>
+        const API_KEY = "a6c1772a166b4bbdf7a2e07c753da7c5";
+        
+        async function getWeather() {
+            const city = document.getElementById('cityInput').value.trim();
+            
+            if (!city) {
+                showError('Введите название города');
+                return;
+            }
+            
+            // Показываем загрузку
+            document.getElementById('loading').classList.add('show');
+            document.getElementById('weatherCard').classList.remove('show');
+            document.getElementById('error').classList.remove('show');
+            
+            try {
+                const url = `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${API_KEY}&units=metric&lang=ru`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayWeather(data);
+                } else {
+                    showError(data.message || 'Город не найден');
+                }
+            } catch (error) {
+                showError('Ошибка подключения. Проверьте интернет');
+            } finally {
+                document.getElementById('loading').classList.remove('show');
+            }
+        }
+        
+        function displayWeather(data) {
+            // Получаем эмодзи для погоды
+            const weatherMain = data.weather[0].main.toLowerCase();
+            let emoji = '☀️';
+            if (weatherMain.includes('rain')) emoji = '🌧';
+            else if (weatherMain.includes('cloud')) emoji = '☁️';
+            else if (weatherMain.includes('snow')) emoji = '❄️';
+            else if (weatherMain.includes('thunder')) emoji = '⛈';
+            else if (weatherMain.includes('mist') || weatherMain.includes('fog')) emoji = '🌫';
+            
+            // Заполняем данные
+            document.getElementById('cityName').textContent = `${data.name}, ${data.sys.country}`;
+            document.getElementById('weatherIcon').textContent = emoji;
+            document.getElementById('temperature').textContent = `${Math.round(data.main.temp)}°C`;
+            document.getElementById('description').textContent = data.weather[0].description;
+            document.getElementById('feelsLike').textContent = `${Math.round(data.main.feels_like)}°C`;
+            document.getElementById('humidity').textContent = `${data.main.humidity}%`;
+            document.getElementById('wind').textContent = `${data.wind.speed} м/с`;
+            document.getElementById('updateTime').textContent = new Date().toLocaleTimeString('ru-RU');
+            
+            // Показываем карточку
+            document.getElementById('weatherCard').classList.add('show');
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = `❌ ${message}`;
+            errorDiv.classList.add('show');
+        }
+        
+        // Добавляем возможность нажать Enter
+        document.getElementById('cityInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                getWeather();
+            }
+        });
+        
+        // При загрузке показываем погоду в Москве
+        setTimeout(() => {
+            document.getElementById('cityInput').value = 'Moscow';
+            getWeather();
+        }, 100);
+    </script>
+</body>
+</html>
