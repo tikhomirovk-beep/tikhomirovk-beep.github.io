@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Погода - Быстро</title>
+    <title>Погода</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -65,10 +65,10 @@
             background: white;
             border-radius: 15px;
             box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-            z-index: 100;
             max-height: 200px;
             overflow-y: auto;
             display: none;
+            z-index: 100;
         }
         .suggestions.show { display: block; }
         .suggestion-item {
@@ -176,6 +176,7 @@
         
         <div id="error" class="error">❌ Ошибка</div>
         
+        <!-- Вкладка 1: Текущая погода -->
         <div id="tab-current" class="tab-content active">
             <div>
                 <div class="weather-icon" id="weatherIcon">🌍</div>
@@ -191,6 +192,7 @@
             </div>
         </div>
         
+        <!-- Вкладка 2: Детали -->
         <div id="tab-details" class="tab-content">
             <div class="info-grid">
                 <div class="info-card"><div class="info-label">🌡 Давление</div><div class="info-value" id="pressure">-- мм</div></div>
@@ -206,12 +208,36 @@
             </div>
         </div>
         
-        <div class="footer">⚡ Быстрая погода</div>
+        <div class="footer">⚡ Погода | OpenWeatherMap</div>
     </div>
 
     <script>
-        let currentWeather = null;
+        // ===== КЛЮЧ API =====
+        const API_KEY = "a6c1772a166b4bbdf7a2e07c753da7c5";
         
+        // ===== КЭШИРОВАНИЕ (10 минут) =====
+        const CACHE_TIME = 10 * 60 * 1000;
+        
+        function getCachedWeather(city) {
+            const cached = localStorage.getItem(`weather_${city.toLowerCase()}`);
+            if (cached) {
+                const data = JSON.parse(cached);
+                if (Date.now() - data.timestamp < CACHE_TIME) {
+                    return data.weather;
+                }
+            }
+            return null;
+        }
+        
+        function saveToCache(city, weather) {
+            localStorage.setItem(`weather_${city.toLowerCase()}`, JSON.stringify({
+                weather: weather,
+                timestamp: Date.now()
+            }));
+            localStorage.setItem('last_city', city);
+        }
+        
+        // ===== ПОЛУЧЕНИЕ ПОГОДЫ =====
         async function getWeather() {
             const city = document.getElementById('cityInput').value.trim();
             if (!city) {
@@ -219,92 +245,34 @@
                 return;
             }
             
+            // Проверяем кэш
+            const cached = getCachedWeather(city);
+            if (cached) {
+                displayWeather(cached);
+                return;
+            }
+            
             showLoading(true);
-            hideError();
             
             try {
-                // Шаг 1: получаем координаты города
-                const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${city}&count=1&language=ru`;
-                const geoResp = await fetch(geoUrl);
-                const geoData = await geoResp.json();
+                const url = `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${API_KEY}&units=metric&lang=ru`;
+                const response = await fetch(url);
+                const data = await response.json();
                 
-                if (!geoData.results || geoData.results.length === 0) {
-                    showError('Город не найден');
-                    showLoading(false);
-                    return;
+                if (data.cod === 200) {
+                    saveToCache(city, data);
+                    displayWeather(data);
+                } else {
+                    showError(data.message || 'Город не найден');
                 }
-                
-                const location = geoData.results[0];
-                const cityName = `${location.name}, ${location.country}`;
-                
-                // Шаг 2: получаем погоду по координатам
-                const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${location.latitude}&longitude=${location.longitude}&current_weather=true&hourly=temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m,pressure_msl,visibility,cloudcover&daily=sunrise,sunset&timezone=auto`;
-                const weatherResp = await fetch(weatherUrl);
-                const weatherData = await weatherResp.json();
-                
-                const current = weatherData.current_weather;
-                const hour = weatherData.hourly;
-                const daily = weatherData.daily;
-                
-                const temp = Math.round(current.temperature);
-                const feelsLike = Math.round(hour.apparent_temperature[0]);
-                const humidity = hour.relative_humidity_2d[0];
-                const windSpeed = current.windspeed;
-                const pressure = Math.round(hour.pressure_msl[0] * 0.750062);
-                const visibility = Math.round(hour.visibility[0] / 1000);
-                const clouds = hour.cloudcover[0];
-                const weatherCode = current.weathercode;
-                
-                let sunrise = '--:--';
-                let sunset = '--:--';
-                if (daily && daily.sunrise && daily.sunrise[0]) {
-                    sunrise = new Date(daily.sunrise[0]).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-                    sunset = new Date(daily.sunset[0]).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-                }
-                
-                let emoji = '☀️';
-                let desc = 'Ясно';
-                if (weatherCode === 0) { emoji = '☀️'; desc = 'Ясно'; }
-                else if (weatherCode === 1 || weatherCode === 2) { emoji = '⛅'; desc = 'Малооблачно'; }
-                else if (weatherCode === 3) { emoji = '☁️'; desc = 'Пасмурно'; }
-                else if (weatherCode >= 45 && weatherCode <= 48) { emoji = '🌫'; desc = 'Туман'; }
-                else if ((weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 82)) { emoji = '🌧'; desc = 'Дождь'; }
-                else if ((weatherCode >= 71 && weatherCode <= 77) || (weatherCode >= 85 && weatherCode <= 86)) { emoji = '❄️'; desc = 'Снег'; }
-                else if (weatherCode >= 95 && weatherCode <= 99) { emoji = '⛈'; desc = 'Гроза'; }
-                
-                document.getElementById('weatherIcon').textContent = emoji;
-                document.getElementById('temperature').textContent = `${temp}°C`;
-                document.getElementById('cityName').textContent = cityName;
-                document.getElementById('description').textContent = desc;
-                document.getElementById('feelsLike').textContent = `${feelsLike}°C`;
-                document.getElementById('humidity').textContent = `${humidity}%`;
-                document.getElementById('wind').textContent = `${windSpeed} м/с`;
-                document.getElementById('updateTime').textContent = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-                document.getElementById('pressure').textContent = `${pressure} мм`;
-                document.getElementById('visibility').textContent = `${visibility} км`;
-                document.getElementById('sunrise').textContent = sunrise;
-                document.getElementById('sunset').textContent = sunset;
-                document.getElementById('clouds').textContent = `${clouds}%`;
-                document.getElementById('windGust').textContent = `${Math.round(windSpeed + 2)} м/с`;
-                
-                let tip = '';
-                if (desc === 'Дождь') tip = '☔ Возьмите зонт!';
-                else if (desc === 'Снег') tip = '❄️ Одевайтесь теплее!';
-                else if (temp > 25) tip = '😎 Отличная погода для прогулки!';
-                else if (temp < 0) tip = '🧣 На улице холодно!';
-                else tip = '🌿 Хорошего дня!';
-                document.getElementById('weatherTip').textContent = tip;
-                
-                currentWeather = { temp, desc, cityName };
-                showLoading(false);
-                
             } catch (error) {
-                console.error(error);
-                showError('Ошибка загрузки. Проверьте интернет.');
-                showLoading(false);
+                showError('Ошибка подключения');
             }
+            
+            showLoading(false);
         }
         
+        // ===== ГЕОЛОКАЦИЯ =====
         function getLocationWeather() {
             if (!navigator.geolocation) {
                 showError('Геолокация не поддерживается');
@@ -317,34 +285,87 @@
                 const lon = position.coords.longitude;
                 
                 try {
-                    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m&timezone=auto`;
-                    const response = await fetch(weatherUrl);
+                    const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric&lang=ru`;
+                    const response = await fetch(url);
                     const data = await response.json();
                     
-                    const temp = Math.round(data.current_weather.temperature);
-                    document.getElementById('temperature').textContent = `${temp}°C`;
-                    document.getElementById('cityName').textContent = 'Ваше местоположение';
-                    document.getElementById('updateTime').textContent = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-                    showLoading(false);
+                    if (data.cod === 200) {
+                        displayWeather(data);
+                        document.getElementById('cityInput').value = data.name;
+                    } else {
+                        showError('Не удалось получить погоду');
+                    }
                 } catch (error) {
-                    showError('Не удалось получить погоду');
-                    showLoading(false);
+                    showError('Ошибка подключения');
                 }
+                
+                showLoading(false);
             }, () => {
                 showError('Доступ к геолокации запрещён');
                 showLoading(false);
             });
         }
         
+        // ===== ОТОБРАЖЕНИЕ ПОГОДЫ =====
+        function displayWeather(data) {
+            // Основные данные
+            const temp = Math.round(data.main.temp);
+            const feelsLike = Math.round(data.main.feels_like);
+            const humidity = data.main.humidity;
+            const windSpeed = data.wind.speed;
+            const pressure = Math.round(data.main.pressure * 0.750062);
+            const visibility = Math.round(data.visibility / 1000);
+            const clouds = data.clouds.all;
+            const description = data.weather[0].description;
+            const cityName = `${data.name}, ${data.sys.country}`;
+            
+            // Время восхода и заката
+            const sunrise = new Date(data.sys.sunrise * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            const sunset = new Date(data.sys.sunset * 1000).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            
+            // Эмодзи погоды
+            let emoji = '☀️';
+            const descLower = description.toLowerCase();
+            if (descLower.includes('дождь')) emoji = '🌧';
+            else if (descLower.includes('снег')) emoji = '❄️';
+            else if (descLower.includes('облач')) emoji = '☁️';
+            else if (descLower.includes('гроза')) emoji = '⛈';
+            else if (descLower.includes('туман')) emoji = '🌫';
+            
+            // Заполняем вкладку "Сейчас"
+            document.getElementById('weatherIcon').textContent = emoji;
+            document.getElementById('temperature').textContent = `${temp}°C`;
+            document.getElementById('cityName').textContent = cityName;
+            document.getElementById('description').textContent = description.charAt(0).toUpperCase() + description.slice(1);
+            document.getElementById('feelsLike').textContent = `${feelsLike}°C`;
+            document.getElementById('humidity').textContent = `${humidity}%`;
+            document.getElementById('wind').textContent = `${windSpeed} м/с`;
+            document.getElementById('updateTime').textContent = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+            
+            // Заполняем вкладку "Детали"
+            document.getElementById('pressure').textContent = `${pressure} мм`;
+            document.getElementById('visibility').textContent = `${visibility} км`;
+            document.getElementById('sunrise').textContent = sunrise;
+            document.getElementById('sunset').textContent = sunset;
+            document.getElementById('clouds').textContent = `${clouds}%`;
+            document.getElementById('windGust').textContent = `${Math.round(windSpeed + 2)} м/с`;
+            
+            // Совет
+            let tip = '';
+            if (descLower.includes('дождь')) tip = '☔ Возьмите зонт!';
+            else if (descLower.includes('снег')) tip = '❄️ Одевайтесь теплее!';
+            else if (temp > 25) tip = '😎 Отличная погода для прогулки!';
+            else if (temp < 0) tip = '🧣 На улице холодно!';
+            else tip = '🌿 Хорошего дня!';
+            document.getElementById('weatherTip').textContent = tip;
+        }
+        
+        // ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
         function showError(msg) {
             const errDiv = document.getElementById('error');
             errDiv.textContent = `❌ ${msg}`;
             errDiv.classList.add('show');
             setTimeout(() => errDiv.classList.remove('show'), 3000);
-        }
-        
-        function hideError() {
-            document.getElementById('error').classList.remove('show');
         }
         
         function showLoading(show) {
@@ -370,7 +391,8 @@
             }
         }
         
-        const popularCities = ['Moscow', 'Saint Petersburg', 'London', 'Paris', 'Berlin', 'Tokyo', 'New York', 'Beijing', 'Dubai', 'Rome'];
+        // ===== ПОДСКАЗКИ ПРИ ВВОДЕ =====
+        const popularCities = ['Moscow', 'Saint Petersburg', 'London', 'Paris', 'Berlin', 'Tokyo', 'New York', 'Beijing', 'Dubai', 'Rome', 'Istanbul', 'Madrid'];
         
         const cityInput = document.getElementById('cityInput');
         const suggestionsBox = document.getElementById('suggestions');
@@ -406,8 +428,21 @@
             if (e.key === 'Enter') getWeather();
         });
         
-        cityInput.value = 'Moscow';
-        getWeather();
+        // ===== ЗАГРУЗКА ПРИ СТАРТЕ =====
+        const lastCity = localStorage.getItem('last_city');
+        if (lastCity) {
+            const cached = getCachedWeather(lastCity);
+            if (cached) {
+                cityInput.value = lastCity;
+                displayWeather(cached);
+            } else {
+                cityInput.value = 'Moscow';
+                getWeather();
+            }
+        } else {
+            cityInput.value = 'Moscow';
+            getWeather();
+        }
     </script>
 </body>
 </html>
